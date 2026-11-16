@@ -1,58 +1,63 @@
-# my.assistant.py
-# Author: Antonia Xenikis
-
-# Messages with these words change someones booking or money, so a person must handle them.
-HANDOFF_WORDS = ["book", "cancel", "refund", "payment"]
+HANDOFF_WORDS = ["cancel", "refund", "payment"]
+MAX_TOOL_ROUNDS = 3
+HANDOFF_REPLY = (
+    "I can't change your booking or handle payments. I'm passing you to the front desk."
+)
 
 
 class StudioHelper:
-    """A mock studio helper. Its replies come from simple rules."""
+    """A studio assistant that can use tools, with a limit on how many rounds."""
 
-    def __init__(self, name, instructions, schedule):
-        """Set up one helper with its own name, instructions, tool, and history."""
+    def __init__(self, name, instructions, tools, model):
         self.name = name
         self.instructions = instructions
-        self.schedule = schedule
+        self.tools = tools
+        self.model = model
         self.history = []
 
     def respond(self, user_message):
-        """Record the user's message, choose a reply, record it, and return it."""
-        # Save what the user said with a role so we know who said it.
         self.history.append({"role": "user", "content": user_message})
         reply = self.choose_reply(user_message)
         self.history.append({"role": "assistant", "content": reply})
         return reply
 
     def choose_reply(self, user_message):
-        """Choose a reply with keyword rules. This is the mock part."""
-        # Lowercase the message once so "Hello" and "hello" are treated the same.
-        text = user_message.lower()
-        # Check for a handoff first, so a booking request is never answered by the tool.
-        if self.needs_human(text):
-            return "I can't change your booking. I'm passing you to the front desk."
-        # Questions about open classes use the schedule tool.
-        if "open" in text or "available" in text or "class" in text:
-            return self.schedule_reply(user_message)
-        if "hello" in text:
-            return f"Hello! I'm {self.name}. Ask me which classes are open on a day."
-        # Anything else gets a safe reply that admits it is not sure.
-        return "I'm not sure how to help with that. I can list open classes."
+        if self.needs_front_desk(user_message):
+            return HANDOFF_REPLY
+        return self.model_reply()
 
-    def needs_human(self, text):
-        """Return True if the message asks to change a booking or handle money."""
-        # Check every handoff word, and stop as soon as one appears in the text.
+    def needs_front_desk(self, user_message):
+        lowered = user_message.lower()
         for word in HANDOFF_WORDS:
-            if word in text:
+            if word in lowered:
                 return True
         return False
 
-    def schedule_reply(self, user_message):
-        """Use the schedule tool to answer a question about open classes."""
-        # Ask the tool which day the message is about.
-        day = self.schedule.find_day(user_message)
-        # No known day: ask for one instead of guessing.
-        if day is None:
-            return "Which day? I can check Monday, Wednesday, or Friday."
-        # Ask the tool what is open that day, then build the reply from it.
-        classes = self.schedule.classes_for(day)
-        return f"Open classes on {day}: {classes}."
+    def model_reply(self):
+        """Ask the model. Run each tool it asks for, then ask again, up to a limit."""
+        for _ in range(MAX_TOOL_ROUNDS):
+            tool_list = self.tools.tool_list()
+            decision = self.model.decide(self.instructions, self.history, tool_list)
+            if decision is None:
+                return "Sorry, I can't answer that right now. Please try again in a moment."
+            if "text" in decision:
+                return decision["text"]
+            name = decision["tool"]
+            arguments = decision["arguments"]
+            result = self.tools.run(name, arguments, self.history)
+            self.history.append(
+                {
+                    "role": "tool",
+                    "tool_name": name,
+                    "arguments": arguments,
+                    "content": result,
+                }
+            )
+        return "Sorry, I couldn't finish that. I'm passing you to the front desk."
+
+    def count_user_messages(self):
+        count = 0
+        for entry in self.history:
+            if entry["role"] == "user":
+                count += 1
+        return count

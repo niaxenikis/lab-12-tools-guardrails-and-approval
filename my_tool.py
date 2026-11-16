@@ -1,26 +1,28 @@
-# my_tool.py
-# Author: Antonia Xenikis
-
-
 class ClassSchedule:
-    """A tool that knows which classes are open on each day. It knows nothing about chatting."""
+    """Looks up studio classes by day."""
 
     def __init__(self, classes):
-        """Store the schedule this tool can look up."""
-        # keeps the dirctionary on this object so the other methods can use it later.
         self.classes = classes
 
     def find_day(self, text):
-        """Return the first known day mentioned in text, or None."""
-        # Loop over every day in the schedule (the dictonary keys).
+        """Return the day named in the text, or None."""
+        lowered = text.lower()
         for day in self.classes:
-            if day in text.lower():
+            if day in lowered:
                 return day
         return None
 
     def classes_for(self, day):
-        """Return the classes for one day or None if the day is unknown."""
-        # Check that the day exists first, so a missing day doesnt crash.
-        if day in self.classes:
-            return self.classes[day]
-        return None
+        """Return the classes on a day."""
+        return self.classes[day]
+
+    def look_up_classes(self, day):
+        """Look up the classes on a day.
+
+        Args:
+            day: The day of the week, such as Monday.
+        """
+        found = self.find_day(day)
+        if found is None:
+            return "That day was not found. I can check Monday, Wednesday, or Friday."
+        return f"Classes on {found}: {self.classes_for(found)}."
